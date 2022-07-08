@@ -1,0 +1,372 @@
+---
+title: "Proyecto 1"
+author: "Benjamin Parraguez"
+date: "Fecha de entrega: 24-04-2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Planteamiento de hipótesis y definición de área de estudio
+
+Hoy en día el uso de la tecnología ha sido indispensable en el uso cotidiano de los seres humanos, donde los satélites artificiales y antenas han jugado un rol fundamental en las telecomunicaciones en este último tiempo, donde la rapidez y la versatilidad han permitido surgir nuevas áreas de investigación, una de ellas son  precisamente las ciencias geoespaciales, donde en este proyecto abordaremos un análisis geoespacial con las herramientas entregadas hasta el momento en este curso.
+
+Ahora bien, para realizar el análisis geoespacial correspondiente, se nos ha requerido el uso de la librería Natural Earth Data mediante el uso del lenguaje de programación R. Realizando una manipulación previa al inicio del desarrollo del proyecto con esta librería, como grupo creemos que el conjunto de datos entregados, además de las variables entregadas por país, carecen de información suficiente además que en algunas catgorías no funciona la data correctamente como para realizar un análisis geoespacial completo. Es por esto que tomamos la decisión de complementar la información entregada por Natural Earth Data, con datos extraídos gratuitamente del sitio World Resources Institute como también indicadores extraídos de los datos del banco mundial.
+
+Abarcando más el problema y definiendo nuestra área de estudio, como grupo hemos decidido trabajar la problemática de la energía a nivel sudamericano, principalmente en el tema del consumo eléctrico a nivel país (y realizando las comparaciones correspondientes con los países de la región), como también visualizar las centrales eléctricas, el tipo de combustible utilizado para generar electricidad, además de  ver la capacidad eléctrica generada por central eléctrica, para posteriormente realizar una comparación de la riqueza generada por los países (PIB) y el consumo energético per cápita.
+
+Es por esto que hemos definido que nuestra hipótesis es la siguiente: Los países sudamericanos con mayor producto interno bruto, son los que más generan KWh per cápita, debido a que tienen los recursos necesarios para crear centrales eléctricas y poder lograr abastecer a la población.
+
+## Obtención y limpeza de datos
+
+Una vez ya declarada nuestra hipótesis, procedemos a manipular la data extraída de la librería de Natural Earth Data, de la página de World Resources Institute (https://datasets.wri.org/dataset/globalpowerplantdatabase) y los indicadores  requeridos del banco mundial (https://datos.bancomundial.org/indicador/EG.USE.ELEC.KH.PC?view=chart)
+
+En nuestro primer caso, es necesario descargar e instalar la libreria rnaturalearth
+
+```{r}
+#install.packages("rnaturalearth")
+```
+Luego cargamos la data relacionada a sudamérica
+```{r}
+SA <- rnaturalearth::ne_countries(continent = 'South America', returnclass = 'sf', scale = 'large')
+```
+Observamos los datos
+```{r, layout="l-body-outset"}
+library(rmarkdown)
+paged_table(SA)
+```
+En este caso, nos podemos dar cuenta de varias cosas, una de ellas es lo desactualizado que está la información entregada acerca de los países de sudamérica, como por ejemplo, la inexistencia de Guyana Francesa, la presencia de la isla dependiente de Reino Unido y la nula consideración de Trinidad y Tobago como país sudamericano. Por ello, es necesario definir a lo que denominamos “países sudamericanos”.
+
+Para la realización de este proyecto, abordaremos los siguientes países como miembros pertenecientes a la región sudamericana: 
+
+**Argentina, Bolivia, Brasil, Chile, Colombia, Ecuador, Guyana, Paraguay, Perú, Suriname, Uruguay y Venezuela.**
+
+Dicho esto, procedemos a eliminar a las Malvinas/Falkland Islands de la base de datos.
+
+```{r}
+SA <- SA[!(SA$sovereignt == "United Kingdom"),]
+```
+Luego de eliminar aquella fila de información, dejaremos de manipular aquella data, debido a que solo nos interesa la columna de gdp_md_est, que nos indica el producto interno bruto en dólares del año 2016 de un determinado país.
+
+Al ser una base de datos con poca data (13 filas y 95 columnas, un total de 1235 datos), no es tan necesario realizar otro proceso de filtrado, debido a que la cantidad de datos y complejidad de ellos es baja.
+
+Pasando a nuestra segunda base de datos, esta no tiene una integración con R, aunque está vinculada la creación de un github en Python. 
+Para evitar aquellos pasos engorrosos, hemos colocado las dos bases de datos a un github público, para que sea mucho más fácil poder replicar el código.
+
+```{r}
+datos<-read.csv("https://raw.githubusercontent.com/BenjaParraguezC/DataCienciaEspacialP1/main/global_power_plant_database.csv", encoding = "UTF-8", header = TRUE, sep = ",", fill = TRUE)
+```
+Observamos la información descargada
+
+```{r, layout="l-body-outset"}
+library(rmarkdown)
+paged_table(datos)
+```
+Podemos analizar que tenemos muchas variables que no nos sirven y nos dificultan a la hora de ejecutar y manipular código, es por esto que eliminamos columnas del dataframe mediante la librería dplyr, las variables a eliminar no nos generan valor al momento de realizar el análisis, muchas de estas corresponden al origen de la información, identificadores de centrales eléctricas, como algunas estimaciones de generación de energía.
+
+```{r}
+#install.packages("dplyr")
+datos<- dplyr::select(datos,-gppd_idnr,-owner,-source,-url,-geolocation_source,-wepp_id,
+                      -generation_data_source,-estimated_generation_note_2013,-estimated_generation_note_2014,
+                      -estimated_generation_note_2015,-estimated_generation_note_2016,-estimated_generation_note_2017,-other_fuel3,
+                      -generation_gwh_2013,-generation_gwh_2014,-generation_gwh_2015,-generation_gwh_2016,-generation_gwh_2017,
+                      -generation_gwh_2018,-generation_gwh_2019,-estimated_generation_gwh_2013,-estimated_generation_gwh_2014,
+                      -estimated_generation_gwh_2015,-estimated_generation_gwh_2016,-other_fuel2,-commissioning_year,
+                      -year_of_capacity_data) 
+```
+Cabe mencionar que, si intentamos eliminar las filas con valores NA, nuestra información quedaría solo en base al país de Estados Unidos, debido a que es la única nación que posee la data completa. Es por esto que no eliminamos casillas con valores NA.
+
+Ahora bien, podemos notar que los países tienen sus respectivas centrales eléctricas, con su respectivo combustible utilizado, como también la capacidad eléctrica generada en megawatts, no obstante aún falta seguir filtrando, esta vez seleccionando a los países de sudamérica.
+
+Para ello, tenemos que seleccionar agrupar países según coordenadas, o bien, aplicar alguna librería que nos permite agrupar países por continente, como lo hace countrycode.
+
+Instalamos la libreria
+
+```{r}
+#install.packages(countrycode)
+datos$continent <- countrycode::countrycode(sourcevar = datos[, "country_long"],
+                               origin = "country.name",
+                               destination = "continent") 
+```
+Aunque nos ha aparecido la siguiente advertencia: In countrycode_convert(sourcevar = sourcevar, origin = origin, destination = dest,  :
+  Some values were not matched unambiguously: Antarctica, Kosovo
+
+De manera de ser más ordenados, buscamos el valor de la fila de Kosovo y la Antártica y se la asignamos a su respectivo continente:
+
+```{r}
+datos[17090,"continent"] = "Europe" #Asignamos a Kosovo al continente europeo
+datos[17091,"continent"] = "Europe"
+datos[91,"continent"] = "Antarctica" #Asignamos la Antartida a su propio continente
+datos[92,"continent"] = "Antarctica"
+
+```
+Ahora procedemos a filtrar por contiente:
+
+```{r}
+SudamericaData = datos[datos$continent == "Americas",]
+```
+
+```{r, layout="l-body-outset"}
+library(rmarkdown)
+paged_table(SudamericaData)
+```
+
+Podemos notar que la información está filtrada por continente americano, no obstante, tenemos que hacer la diferenciación entre américa del sur vs el resto del continente, debido a que solo buscamos tratar con los países sudamericanos descritos anteriormente (Argentina, Bolivia, Brasil, Chile, Colombia, Ecuador, Guyana, Paraguay, Perú, Suriname, Uruguay y Venezuela.)
+
+```{r}
+SDFiltrada<-SudamericaData[!(SudamericaData$country=="CAN" | SudamericaData$country=="CUB"| SudamericaData$country=="DOM"|
+                               SudamericaData$country=="HND" | SudamericaData$country=="JAM"|SudamericaData$country=="MEX"|
+                               SudamericaData$country=="NIC"|SudamericaData$country=="PAN"| SudamericaData$country=="USA"|
+                               SudamericaData$country=="CRI"|SudamericaData$country=="USA" | SudamericaData$country=="SLV"|
+                               SudamericaData$country=="GTM"|SudamericaData$country=="GUF" | SudamericaData$country=="LCA"|
+                               SudamericaData$country=="TTO"),]  
+```
+
+Una vez realizado nuestro segundo proceso de limpieza de datos, nos faltaría trabajar nuestra data de los indicadores del banco mundial. Esta base de datos nos indica el consumo eléctrico per cápita a lo largo de los años. La información fue extraída de su página directamente, y a continuación la extracción y posteriormente, la limpieza de los datos.
+
+```{r}
+datosBancoMundial<-read.csv("https://raw.githubusercontent.com/BenjaParraguezC/DataCienciaEspacialP1/main/DatosEnergia.csv", encoding = "UTF-8", header = TRUE, sep = ",", fill = TRUE)
+```
+Observamos la información:
+
+```{r, layout="l-body-outset"}
+library(rmarkdown)
+paged_table(datosBancoMundial)
+```
+Vemos algunos años con valores NA (ejemplo los valores del 2015 en adelante), además de algunas columnas innecesarias para trabajar, es por ello que toca filtrar.
+
+```{r}
+datosBancoMundial<- dplyr::select(datosBancoMundial,-Indicator.Code,-Indicator.Name,-X1960,-X1961,-X1962,-X1963,
+                                  -X1964,-X1965,-X1966,-X1967,-X1968,-X1969,-X1970,-X1971,-X1972,-X1973,-X1974,
+                                  -X1975,-X1976,-X1977,-X1978,-X1979,-X1980,-X1981,-X1982,-X1983,-X1984,-X1985,
+                                  -X1986,-X1987,-X1988,-X1989,-X1990,-X1991,-X1992,-X1993,-X1994,-X1995,-X1996,-X1997,
+                                  -X1998,-X1999,-X2000,-X2001,-X2002,-X2003,-X2004,-X2005,-X2015,-X2016,-X2017,-X2018,
+                                  -X2019,-X2020,-X) 
+
+```
+Luego de filtrar por columnas, también tenemos el mismo problema de necesitar reagrupar por país, por lo que utilizaremos el mismo método que la vez anterior, es decir, utilizando la librería countrycode
+
+```{r}
+datosBancoMundial$continent <- countrycode::countrycode(datosBancoMundial$Country.Code,
+                                      origin = "iso3c",
+                                      destination = "continent")
+```
+Si bien, tenemos varias advertencias con respecto a la asignación de continente en muchos países, en los países seleccionados sudamericanos, no tendremos aquellos inconvenientes, por lo que seguimos ordenando y filtrando la base de datos.
+
+Filtramos por continente americano
+
+```{r}
+SudDataEnergia = datosBancoMundial[datosBancoMundial$continent == "Americas",]
+```
+
+Eliminamos los valores NA, que en este caso,  no son necesarios
+```{r}
+SudDataEnergia = SudDataEnergia[!is.na(SudDataEnergia$X.U.FEFF.Country.Name),]
+```
+
+Filtramos por países de la región
+
+```{r}
+SudDataEnergia<-SudDataEnergia[(SudDataEnergia$Country.Code=="ARG"|SudDataEnergia$Country.Code=="BOL"| SudDataEnergia$Country.Code=="BRA"| SudDataEnergia$Country.Code=="CHL" | SudDataEnergia$Country.Code=="COL"| SudDataEnergia$Country.Code=="ECU"| SudDataEnergia$Country.Code=="PER"| SudDataEnergia$Country.Code=="GUY"| SudDataEnergia$Country.Code=="PRY"| SudDataEnergia$Country.Code=="SUR"| SudDataEnergia$Country.Code=="URY"| SudDataEnergia$Country.Code=="VEN"),]  
+
+```
+Observamos que este todo en orden en la extracción de datos
+
+```{r, layout="l-body-outset"}
+library(rmarkdown)
+paged_table(SudDataEnergia)
+```
+Acotación: Guyana no tiene dato alguno en los indicadores del banco mundial en este ámbito, no obstante, intentaremos trabajar con la data del país dentro de lo posible.
+
+Una vez ya obtenida y limpiada la data relacionada a nuestra problemática, empezamos a trabajar en nuestro análisis cartográfico.
+
+
+## Análisis Cartográfico
+
+
+Para empezar el análisis cartográfico, vamos a utilizar la librería mapview por sobre otras librerías (como por ejemplo ggplot), debido a la facilidad de integrar nuestra gran cantidad de datos, además que estéticamente los mapas quedan con una mejor presentación y permite la manipulación e interacción por parte del usuario.
+
+Descargamos y/o cargamos la libreria
+
+```{r}
+#install.packages(“mapview)
+library(mapview)
+```
+Antes de empezar a trabajar con mapview, es necesario transformar nuestros dataframes, en sf o simple features, debido a que la librería solo trabaja con tipos de datos espaciales (sp,sf,raster, etc)
+
+Por lo que descargamos y/o instalamos la librería sf
+
+```{r}
+#install.packages(“sf”)
+```
+
+Ahora transformamos nuestra data en sf
+
+```{r}
+SDCentral_Sf <- sf::st_as_sf(SDFiltrada, coords = c("longitude","latitude"))
+```
+
+Para nuestros indicadores del banco mundial, al no tener información georeferenciada con respecto a los países, lo que vamos a hacer es unir nuestra data de rnaturalearth mediante las columnas que tienen en común, como lo es sov_a3 y Country.Code respectivamente.
+
+```{r}
+DataMerged <- merge(SudDataEnergia, SA, by.x="Country.Code", by.y="sov_a3")
+```
+Ahora transformamos el dataframe en sf:
+```{r}
+DataMerged_sf <- sf::st_as_sf(DataMerged)
+```
+Luego de tener nuestra información transformada a sf, nos falta descargar un par de librerias más para diseñar y personalizar nuestros mapas.
+```{r}
+#install.packages("RColorBrewer")
+#install.packages("leafsync")
+#install.packages("leaflet.extras")
+```
+
+Luego realizamos nuestros respectivos mapas.
+
+### Centrales eléctricas en Sudamérica y consumo de Kilowatt per cápita
+```{r}
+library(mapview)
+mapview() + mapview(DataMerged_sf, zcol='X2014', col.regions = RColorBrewer::brewer.pal(11,"RdYlGn"), alpha.regions = 1, layer.name= "kWh per capita") + mapview(SDCentral_Sf, zcol="primary_fuel", layer.name ="Combustible utilizado en las centrales electricas")
+```
+
+Podemos apreciar en este mapa, la gran cantidad de centrales electricas presentes en el continente sudamericano, tambien como algunos paises aprovechan sus ventajas comparativas naturales para abastecerse del combustible para el funcionamiento de la central eléctrica,ya sea utilizando la energía solar, energia hidroeléctrica proveniente de rios/mares, o bien aprovechando la industria local como es el caso de Brasil con la producción de Biomasa o Argentina aprovechando sus centrales nucleares para brindar recursos a sus centrales eléctricas.
+
+Otro caso interesante de este mapa, es la concentracion de centrales electricas en ciertas partes de cada país,en el caso de Brasil, sus centrales electricas estan concentradas principalmente en la costa atlantica, en el caso de Chile, se puede ver una diversificación en el uso de combustible, donde en la zona norte, podemos notar la presencia de energía solar y eólica para poder abastecer a la industria, mientras que en la zona sur predomina las centrales hidroelectricas.
+
+Hablando del consumo de kilowatt per capita, podemos notar que los países que a simple vista tienen una gran cantidad de centrales eléctricas, no necesariamente son los que poseen un mayor valor en este indicador, debido a que hay que tomar en cuenta el factor de la población, donde los países que poseen una gran cantidad de población hacen que el valor de este indicador tienda a disminuir. No obstante es bastante curioso e interesante el caso de Ecuador, donde se tiene una gran cantidad de centrales electricas como se aprecia gráficamente y por ende, se piensa que deberia tener un valor bastante alto en el indicador, pero todo indica que no es así, además que no consta de un territorio tan extenso, por ende será un problema de cara futuro.
+
+### Centrales eléctricas en Sudamérica y PIB por país
+```{r}
+mapview() + mapview(SA, zcol='gdp_md_est', col.regions = RColorBrewer::brewer.pal(11,"RdYlGn"), alpha.regions = 1, layer.name = "PIB en Millones de dolares") + mapview(SDCentral_Sf, zcol="primary_fuel", layer.name ="Combustible utilizado en las centrales electricas")
+```
+
+Ahora bien, pasando al siguiente mapa, podemos analizar, el país que tiene una mayor cantidad de centrales eléctricas, es quien tiene el mayor pib de la región, después lo sigue Argentina, Colombia y Chile, mientras que los paises que tiene un pib bajo en comparación a la región, son Guyana, Suriname y Paraguay. Podemos decir que de estas 3 naciones, tienen una cantidad de centrales electricas inferior a 5, por lo que se puede llegar a interpretar a que estos países derivan sus escasos recursos a otros ámbitos gubernamentales, o bien, no son capaces de generar los suficientes recursos para poder expandirse electricamente.
+
+
+Otra forma gráfica de ver la cantidad de centrales eléctricas y ver el tipo de combustible, es mediante una tabla.
+```{r}
+#install.packages("janitor")
+CombustiblePais <- janitor::tabyl(SDFiltrada, country_long,primary_fuel)
+CantidadPais <- janitor::tabyl(SDFiltrada,country_long)
+TablaCombxPais <- merge(x = CombustiblePais, y = CantidadPais, by = "country_long")
+TablaCombxPais <- dplyr::select(TablaCombxPais,-percent)
+colnames(TablaCombxPais)[colnames(TablaCombxPais) == 'n'] <- 'Total'
+
+paged_table(TablaCombxPais, options = list(rows.print = 12, cols.print = 13))
+```
+
+Donde aqui podemos verificar nuestra declaración, que Brasil es el país con mayor cantidad de centrales electricas con un valor de 2360, mientras que Suriname posee el caso contrario con un valor de 1.
+También observamos que Chile es el 2do país con mayor cantidad de centrales eléctricas, algo que en relación a su país vecino, Argentina, poseen una diferencia de 79 centrales electricas.
+
+De esta misma tabla se menciona que el combustible más utilizado en las centrales eléctricas es el agua, luego lo sigue el petróleo y después el viento.
+
+También tenemos que Chile es el único país que tiene una central eléctrica que tiene como combustible el petcoke -o coke de petroleo-
+
+Ahora procedemos a crar un mapa que nos permita comparar el consumo de kilowatt per capita y el producto interno bruto.
+```{r}
+KpC<- mapview() + mapview(DataMerged_sf, zcol='X2014', col.regions = RColorBrewer::brewer.pal(11,"RdYlGn"), alpha.regions = 1, layer.name= "kWh per capita")
+```
+
+```{r}
+PIB <- mapview() + mapview(SA, zcol='gdp_md_est', col.regions = RColorBrewer::brewer.pal(11,"Spectral"), alpha.regions = 1, layer.name = "PIB en Millones de dolares")
+```
+### Consumo de Kilowatt per cápita vs PIB por país en Sudamérica.
+```{r}
+library(leaflet.extras)
+KpC | PIB
+```
+Deslizando la barra vertical, podemos notar que a la izquierda tenemos los valores de kilowatt per cápita, mientras que a la derecha tenemos los valores del PIB.
+
+Podemos notar que Brasil, que es el país con mayor PIB, no es el país con mayor kilowatt per cápita, mismo caso para Chile, donde es el país que más genera, pero no es el que tiene mayor abundancia de riquezas-
+
+Luego tenemos el caso de Suriname, que tiene un alto valor en el indice KWh, pero debe tener uno de los PIB más bajos de la región. Y finalmente, tenemos a Bolivia, un país que tiene ambos indices en bajo.
+
+## Análisis de correlación espacial
+
+Pasando al análisis de correlación espacial, podemos analizar que nuestras variables trabajadas anteriormente (Pib por país, KiloWatt per cápita y las centrales eléctricas.) Esto nos permitiria exponer la correlacion entre los parametros trabajados, poder identificar posibles predicciones, además de observar que tanto puede explicar nuestro modelo con nuestra hipotesis en este proyecto.
+
+En primer lugar, vamos a analizar las variables Producto interno bruto y Kilowatt per cápita, mediante la correlacion de Pearson
+```{r}
+
+plot(DataMerged$gdp_md_est ~ DataMerged$X2014)
+cor.test(DataMerged$gdp_md_est, DataMerged$X2014)
+```
+De estos resultados podemos decir bastantes cosas, una de ella es que la correlacion entre variables tiene un valor de 0.13, es decir, existe una correlación directa baja entre las variables empleadas, por lo que tenemos a duras penas una relacion lineal. Pasando al p-value, tenemos un valor de 0.705, esto implica que nuestra hipotesis nula, el modelo no es válido, se termina aceptando, es necesario seguir analizando otras variables para determinar si comete o no un error tipo 1.
+
+Es por ello que calculamos el modelo de regresión lineal, que nos brindara el análisis de varianza (ANOVA) para poder sacar conclusiones mejor fundamentadas.
+```{r}
+ModeloPibvsKWh <-  lm(DataMerged$gdp_md_est ~ DataMerged$X2014)
+
+plot(DataMerged$gdp_md_est ~ DataMerged$X2014)
+abline(ModeloPibvsKWh, col="red")
+
+summary(ModeloPibvsKWh) 
+```
+De aquella información, podemos notar que el valor del R^2 ajustado es negativo, esto indica que nuestro modelo no explica la variabilidad del PIB, y por ende, el modelo no es válido como nos indicaba el p-value. Además si nos ponemos a observar los coeficientes, especificamente en la columna de Pr(>|t|), tenemos que la variable KWh per capita, no aporta al modelo propuesto.
+
+Concluyendo en este modelo, tenemos que la predicción realizada con las variables PIB y KWh, no son lo suficientemente significativas como para predecir algun comportamiento, al menos, de forma lineal, además que nuestro modelo no es válido por lo que se acepta H0.
+
+
+Ahora que nos damos cuenta que no es posible de realizar un modelo entre el PIB y Kilowatt per cápita, toca ahora relacionar si la cantidad de centrales electricas poseen alguna correlacion con los indicadores mencionados anteriormente, por lo que realizamos el mismo proceso que para el modelo anterior.
+
+```{r}
+plot(TablaCombxPais$Total ~ DataMerged$X2014)
+
+cor.test(TablaCombxPais$Total, DataMerged$X2014)
+```
+
+Del gráfico, podemos ver cierta tendencia a los puntos a estar cercanos al eje x, no obstante tenemos aquel dato atípico que no cumple esta condición, que sin duda es Brasil, esto ya nos da un primer vistazo de los posibles resultados esperados en este modelo y su correlación.
+
+Observando los resultados, tenemos un leve aumento en la correlacion entre las variables en comparación a los parametros utilizados anteriormente, no obstante, sigue siendo una correlacion directa baja, mientras que nuestro p-value, tiene un valor de 0.5793, esto implica que se acepta la hipotesis H0, el modelo no es válido, toca seguir analizando la significancia y los valores de R^2 ajustado para determinar la explicacion de la variabilidad del parametro de cantidad totales de centrales electricas por pais
+
+
+```{r}
+ModeloKWhvsTotal <- lm(TablaCombxPais$Total ~ DataMerged$X2014)
+
+summary(ModeloKWhvsTotal)
+plot(TablaCombxPais$Total ~ DataMerged$X2014)
+abline(ModeloKWhvsTotal, col="red")
+
+```
+
+Finalmente, tenemos el mismo resultado que el modelo anterior, el modelo no logra explicar la variabilidad del parametro del eje y, además de aceptar la hipotesis de H0, y sin duda alguna, Kilowatt per cápita no logra aportar al modelo propuesto ni tampoco explicar la cantidad de centrales electricas.
+
+
+Por último, pero no menor, vamos a realizar el último analisis de correlación, esta vez utilizando la cantidad total de centrales eléctricas y el PIB por país, donde esperamos tener un resultado distinto en relacion a los dos modelos anteriormente rechazados.
+```{r}
+plot(TablaCombxPais$Total ~ DataMerged$gdp_md_est)
+
+cor.test(TablaCombxPais$Total,DataMerged$gdp_md_est)
+```
+
+Del gráfico, podemos ver que los puntos siguen cierta tendencia una recta con pendiente positiva, también podemos notar la presencia de Brasil en la esquina superior derecha.
+
+Analizando la correlación, tenemos una correlacion directa alta, en otras palabras, las variables estan asociadas con un valor de 0.958. Si vemos ahora el p-value, podemos notar que tiene un valor menor a 0.05, y por ende, se rechaza H0, lo que indica que el modelo es válido para su análisis, siempre y cuando no recaiga en un error tipo 2.
+
+```{r}
+ModeloPIBvsTotal <- lm(TablaCombxPais$Total ~ DataMerged$gdp_md_est)
+
+summary(ModeloPIBvsTotal)
+plot(TablaCombxPais$Total ~ DataMerged$gdp_md_est)
+abline(ModeloPIBvsTotal, col="red")
+```
+
+Pasando al análisis de la regresión, tenemos que nuestra variable significativa si aporta al modelo propuesto, además de aportar 91% la variabilidad del total de centrales eléctricas. Donde al rechazar H0, donde su p-value es menor a 0.05, podemos decir que nuestro modelo si es válido.
+
+Concluyendo nuestro análisis de correlación, realizamos 3 modelos para determinar la correlación de las variables que trabajamos previamente en nuestros mapas, donde determinamos que el Kilowatt pér cápita no posee relacion alguna tanto con el producto interno bruto de un país ni con la cantidad de centrales eléctricas que puede llegar a disponer, mientras que determinamos que si existe una relación entre el PIB de un país y su cantidad de centrales eléctricas, por lo que se puede predecir el comportamiento de la cantidad de centrales eléctircas dado la riqueza de un país. 
+
+
+## Resultados y conclusiones.
+
+La realización de análisis cartográficos nos permite tener un entendimiento mas visual con respecto a la base de datos, ya que existen bases de datos excesivamente grandes, donde obviamente no podemos analizar los datos sin elaborar un elemento mas visual, como lo son los mapas de la cartografía. Estos lo vemos en la realización del primer mapa donde utilizamos las variables Kwh per cápita y centrales eléctricas. Ya podemos hacernos una idea de la correlación que existen entre estas variables, vemos claramente que Bolivia teniendo muy pocas centrales eléctricas, tiene un consumo muy bajo de kWh per cápita, y a la vez vemos que chile es uno de los que mas consumo de kWh per cápita tiene, lo cual tiene sentido ya que es el segundo país con más centrales eléctricas de Latinoamérica luego de Brasil. El cual se ve que no tiene un valor muy alto en consumo de energía, pero esto se debe a que también hay que tener en cuenta la cantidad de población del país. 
+
+Podemos realizar este mismo análisis con respecto al segundo mapa, tenemos nuevamente la cantidad de centrales eléctricas, las cuales nos dan un acercamiento a nuestra hipótesis. Ya que, al mirar el mapa, lo primero que vemos es que Brasil es el país con mayor PIB, y como ya vimos, este también es el que tiene una mayor cantidad de centrales eléctricas. Es importante aclarar que a diferencia del análisis anterior(kWh), era analizado per cápita, ahora el PIB es del país en general, no per cápita. Continuando, podemos ver que nuevamente Chile es el país que le sigue a Brasil, por ser el siguiente país con mas centrales eléctricas. Y vemos que los países más pequeños, que tienen una menor cantidad de centrales eléctricas, tienen menor PIB. Esto es simplemente el primer análisis visual que tenemos de los datos, ahora también podemos realizar un análisis de correlación, para comprobar de mejor manera si es que nuestra hipótesis es correcta. 
+
+Se realizo un análisis de correlación para ver como se relacionan los parámetros utilizados anteriormente. Primero se analizaron las variables de kWh y PIB, donde se obtuvo como resultado que estas no estaban relacionadas. Luego buscamos ver la relación que tenían estas 2 variables con la cantidad de centrales eléctricas, donde como resultado obtuvimos que solo el PIB tenía relación con esta, por lo que los países que tengan mayor valor de PIB, tienden a tener una gran cantidad de centrales eléctricas.
+
+En conclusión, gracias a los análisis cartográficos, nos permitió acercarnos de mejor manera a nuestra Hipótesis, y ver si es que estábamos bien encaminados, o simplemente estábamos totalmente equivocados. Como podemos ver, en un comienzo pensamos que la variable de kWh per cápita estaba relacionada con la cantidad de centrales eléctricas, lo cual después, gracias al análisis de correlación espacial, nos dimos cuenta de que esto no era así. A la vez, con la variable de PIB, esta si se aprobó, el análisis cartográfico fue similar al de correlación espacial. De esta manera, nuestra hipótesis no estaba del todo correcta, ya que los países sudamericanos con mayor producto interno bruto son los que más tienen centrales eléctricas, pero lo que no es correcto afirmar, es que al tener mayor cantidad de centrales eléctricas, deberían tener un mayor consumo de kilowatts per cápita, este resultado da a entender que ciertos factores culturales, sociales y geográficos de cada nación pueden llegar a cambiar el análisis demostrado. 
+
+En resumidas cuentas, nuestra hipótesis, “ Los países sudamericanos con mayor producto interno bruto, son los que más generan KWh per cápita, debido a que tienen los recursos necesarios para crear centrales eléctricas y poder lograr abastecer a la población”, es parcialmente incorrecta, o si nos ponemos rigurosos, incorrecta.
