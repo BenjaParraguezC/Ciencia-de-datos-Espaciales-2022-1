@@ -1,0 +1,365 @@
+---
+title: "Proyecto 3"
+author: "Benjamin Parraguez"
+date: "Fecha de entrega: 3-07-2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Definición de área y mercado de estudio.
+
+Hoy en día debido a ciertos factores tanto económico, políticos y sociales, han logrado que el precio de las viviendas en este último tiempo haya sufrido un gran incremento, dónde últimamente los habitantes de la región metropolitana están optando cada vez al arriendo por sobre la compra de una propiedad, este comportamiento puede ser causado por diversos factores, ya sea una alta tasa de interés en los créditos hipotecarios, como también una gran cantidad de trámites burocráticos, por dar un par de casos, no obstante, hay que ver esta problemática a través de otra perspectiva, donde precisamente las inmobiliarias tasan las propiedades a unos valores donde la clase media chilena no tiene los medios necesarios para llegar aquellas restricciones. Es por esto que como grupo, hemos decidido aplicar nuestro conocimiento de ciencias espaciales adquirido durante el semestre para poder modelar aquella problemática, donde para plantear nuestra hipótesis nos basaremos en dos comunas con grandes diferencias económicas, como lo es Las Condes y Puente Alto, además utilizaremos como referencia las viviendas de tipo casa, debido a que poseen una gran diferencia de precios en comparación a los departamentos. La información a trabajar consta de los años 2013 a 2014, por lo que pueden existir ciertas incoherencias con los precios actuales. Hemos tomado la decisión de escoger estas dos comunas debido a que historicamente se han presentado diferencias políticas, sociales y economícas, es por ello que consideramos atractivo realizar este analisis espacial tomando en cuenta las dos comunas mencionadas anteriormente.
+
+## Planteamiento de hipótesis 
+
+Dada las condiciones mencionadas anteriormente, nuestra principal hipótesis donde basaremos nuestro trabajo es la siguiente: “El valor de una casa está basado únicamente en la cantidad de metros cuadrados tanto del terreno, como de la construcción”. En otras palabras, una casa ubicada en la comuna de Las Condes o bien en la comuna de Puente Alto, tendra un alto valor dependiendo de cuantos metros cuadrados de terreno y construcción tenga a disposición.
+
+## Procesamiento y limpieza de datos 
+
+Pasando al procesamiento y limpieza de datos, lo primero que hacemos es cargar la base de datos brindada para este proyecto
+
+```{r}
+#install.packages("sf")
+#Es necesario tener este mismo archivo en la misma carpeta que los shapefiles.
+#setwd() 
+RM <- sf::st_read("RM_SII_CBR2.shp") #utilizamos la libreria sf que nos permite trabajar con los archivos con extension .shp
+```
+
+Observamos que es lo que tenemos de información.
+```{r, layout="l-body-outset"}
+rmarkdown::paged_table(RM)
+```
+
+Sin duda alguna vemos una gran cantidad de columnas (¡Más de 90!), como también de filas, es por ello que es necesario eliminar todas las 
+columnas que no van a ser necesarias para realizar nuestro analisis.
+
+Es por ello que realizamos un primer procesamiento a nuestros datos.
+
+```{r}
+#install.packages("dplyr")
+RMFiltrado<- dplyr::select(RM,-COMUNA_SII,-Status,-PREDIO,-MES,-ANO,-FECHA,-ID_CBR,-COMUNA_S_1,-ZIP,
+                           -Ref_ID,-Match_addr,-Addr_type,-ARC_ZIPCod,-codigounic,-CANTIDAD_1,-CANTIDAD__,
+                           -GSE12PRED,-Amp_tst,-COM_CAS,-COM_CIT,-COM_PR_CIT,-COM_DPT,-COMUNA,
+                           -NGSE_12,-GSE12_NUM,-MANZ,-DIRECCION,-CONSERVADO,
+                           -CODINE11,-COMUNA_1,-NOM_CALLE,-NUM_CALLE,-NUMERO,-FOJA,-SC_NOM_TPR,-ZonaMA_NEG,-ZonaMA_POS,
+                           -AVALUO_EX,-TOMO,-Z_UFM2_CAS,-Z_UFM2_DEP,-Match_type,-Score,-User_fld,-DESTINO,-COD_SII_TE,-ROL,
+                           -Depto_UFPr,-IMORANDPTO) 
+```
+
+Hemos decidido eliminar aquellas columnas, ya que no aportaban información para el contexto del problema, muchas de ellas eran identificadores, como también información redudante.
+
+Observamos como nos va quedando nuestros datos ahora.
+```{r}
+rmarkdown::paged_table(RMFiltrado)
+```
+
+Aun nos falta filtrar un par de columnas como también el analisis de los datos atípicos presentes en nuestros datos.
+
+```{r}
+RMFiltrado2 <- dplyr::select(RMFiltrado,-ABC1_12,-C2_12,-C3_12,-D_12,-E_12,-ABC1_12P,-C2_12P,-C3_12P,-D_12P,-E_12P)
+```
+
+Como grupo hemos tomado la decisión de eliminar estas columnas que indican el nivel socioeconomico de los habitantes dependiendo de la vivienda/manzana en que se ubican, encontramos que estas columnas introducen sesgo a nuestro análisis y es por ello que son eliminadas.
+
+Ahora bien, toca analizar cada una de las variables, para determinar si presentan outliers, es decir, datos atípicos causados por diferentes factores. Cabe mencionar que solo daremos a conocer un par de las variables que presentan dichos casos.
+
+```{r}
+boxplot(RMFiltrado2$ANO_CONSTR, horizontal = TRUE) # ANO_CONSTR > 0
+```
+Podemos apreciar que el año de construcción de la vivienda presenta datos con valores 0.
+
+```{r}
+boxplot(RMFiltrado2$SUP_TERR, horizontal = TRUE)
+```
+
+Hay que aclarar que la superficie del terreno debe ser mayor a 0 en este caso.
+
+Ahora bien, una vez determinado los valores atípicos que influyen en nuestro estudio, es necesario filtrar para poder quitar estos valores.
+
+```{r}
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$SUP_TERR !=0,]
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$ANO_CONSTR !=0,]
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$SUP_CONSTR !=0,]
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$POB_FLOT < 30000,]
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$HA_MZ !=0,]
+```
+Con los comandos aplicados recientemente, tenemos nuestra data limpia. No obstante ahora toca filtrar por tipo de vivienda y por comuna a trabajar. Ahora bien, hay que mencionar que la poca información entregada por el proyecto en cuestión nos pone en ciertos aspectos en "jaque", es por esto que cabe mencionar lo siguiente:
+
+Para determinar si una vivienda es una casa o bien un departamento, nos basaremos en 3 columnas: DPTO_CASA, BODEGA Y ESTACIONAM
+
+¿Por qué?
+
+Básicamente, manipulando la data previamente, nos logramos dar cuenta de un cierto comportamiento, donde las casas por lo general tienden a tener un valor tanto en DPTO_CASA, BODEGA y ESTACIONAM igual a 0. Esto lo comprobamos colocando la dirección de las casas en Google maps y dando a conocer si en la vivienda era una casa o bien era un departamento. Cabe mencionar que tal vez no es el método más efectivo a la hora de determinar si una vivienda es casa o departamento, pero dada la naturaleza del problema, como también la poca información disponible en las variables a utilizar, hemos tomado la decisión de utilizar este método.
+
+```{r}
+RMFiltrado2 <- RMFiltrado2[RMFiltrado2$DPTO_CASA == 0,]
+RMFiltrado2 <-  RMFiltrado2[RMFiltrado2$BODEGA ==0,]
+RMFiltrado2 <-  RMFiltrado2[RMFiltrado2$ESTACIONAM ==0,]
+```
+
+Ahora bien, una vez filtrada nuestros datos a nivel general, toca empezar a filtrar por comuna, esta vez, haciendo enfasis a Las Condes y Puente Alto. 
+
+
+Vamos con nuestro primer caso, que será la comuna de Las Condes.
+```{r}
+LasCondes <- RMFiltrado2[RMFiltrado2$COMUNA_12 == "LAS CONDES",]
+CasasLasCondes<- dplyr::select(LasCondes,-COMUNA_12,-DPTO_CASA,-ESTACIONAM,-BODEGA) #eliminamos estas columnas porque tendran el mismo valor de 0 o bien serán redundantes para nuestro estudio.
+CasasLasCondes <- na.omit(CasasLasCondes) #eliminamos los NA
+CasasLasCondes$geometry <- sf::st_zm(CasasLasCondes$geometry) #transformamos geometry a una una medida correcta.
+```
+
+Realizamos el mismo procedimiento para la comuna de Puente Alto.
+```{r}
+PuenteAlto <- RMFiltrado2[RMFiltrado2$COMUNA_12 == "PUENTE ALTO",]
+CasasPuenteAlto <- dplyr::select(PuenteAlto,-COMUNA_12,-DPTO_CASA,-ESTACIONAM,-BODEGA)
+CasasPuenteAlto <- na.omit(CasasPuenteAlto)
+CasasPuenteAlto$geometry <- sf::st_zm(CasasPuenteAlto$geometry)
+```
+Y Ahora observamos nuestra data procesada y filtrada para cada una de las columnas.
+
+```{r}
+rmarkdown::paged_table(CasasLasCondes)
+```
+
+```{r}
+rmarkdown::paged_table(CasasPuenteAlto)
+```
+
+Antes de pasar el modelamiento del problema, vamos a utilizar las zonas urbanas del proyecto 2, para poder representar de mejor manera las comunas. Es por ello que las vamos a cargar, procesar y posteriormente visualizar.
+
+```{r}
+ZonasUrbanas <- sf::st_read("Zonas_urbanas_2017_Chile.shp") # Cargamos las zonas urbanas de Chile
+```
+
+```{r}
+ZonasUrbanas <- dplyr::select(ZonasUrbanas,NOM_COMUNA,geometry) #filtramos
+ZonaLasCondes <- ZonasUrbanas[ZonasUrbanas$NOM_COMUNA =='LAS CONDES',] #Y tenemos los poligonos para las comunas a trabajar.
+ZonaPuenteAlto <- ZonasUrbanas[ZonasUrbanas$NOM_COMUNA =='PUENTE ALTO',]
+```
+
+Si visualizamos nuestros poligonos con los puntos en cuestión tenemos lo siguiente (para el caso de Puente Alto):
+
+###Casas en la comuna de Puente Alto
+```{r}
+#install.packages('mapview')
+mapview::mapview(ZonaPuenteAlto, col.regions = 'red') + mapview::mapview(CasasPuenteAlto$geometry)
+```
+
+Para el caso de Las Condes:
+###Casas en la comuna de Las Condes
+```{r}
+mapview::mapview(ZonaLasCondes, col.regions = 'red') + mapview::mapview(CasasLasCondes$geometry)
+```
+
+## Modelamiento del problema
+
+Pasando al modelamiento del problema, es necesario determinar analizar el comportamiento de nuestras variables, en relación a nuestra variable objetivo, que en este caso seria UF_TRANS, que precisamente mide el valor de la vivienda en unidades de fomento, una de ellas en nuestro caso sería una matriz de correlación, esto nos permite tener una primera imprensión en cuanto a nuestra hipotesis.
+
+Es por ello que empezamos a realizar nuestra matriz de Pearson.
+
+```{r}
+AnalisisLC <- CasasLasCondes #copiamos nuestra variable, debido a que para realizar la matriz, tenemos que eliminar la columna de geometry
+
+AnalisisPA <- CasasPuenteAlto
+
+AnalisisLC$geometry <- NULL #eliminamos la columna de geometry
+AnalisisPA$geometry <- NULL
+
+CorLC = cor(AnalisisLC) #Guardamos la correlacion entre variables en una nueva variable.
+CorPA = cor(AnalisisPA)
+```
+
+Ahora procedemos a visualizar la matriz de correlación para el caso de las casas de Las Condes.
+```{r}
+#install.packages("corrplot")
+corrplot::corrplot(CorLC, method = 'circle') 
+```
+
+En este caso podemos notar, que el valor de una propiedad, tiene una correlacion positiva, con las variables de Avaluo, contribuciones, superficie del terreno y la superficie de construcción, almenos así da a entender de manera gráfica. Si lo observamos en una data, podremos tener más variables y mejores conclusiones.
+
+```{r}
+CorLC <-  as.data.frame(CorLC)
+rmarkdown::paged_table(CorLC)
+```
+
+Analizando la tabla, podemos notar que además de las variables mencionadas anteriormente, existen otras que también tienen un leve grado de correlacion positiva con nuestra variable objetivo, como el año de construccion, el tiempo de transporte privado para llegar a las condes, el costo del uf por metro cuadrado en las casas, la población flotando de la manzana, el tamaño promedio por finca, el promedio de vegetación, el area de la manzana, entre otras más.
+
+
+Realizamos el mismo caso para Puente Alto.
+```{r}
+corrplot::corrplot(CorPA, method = 'circle') 
+```
+En este caso podemos observar de un caso bastante peculiar, además de tener una desviacion estandar de cero, podemos observar que las variables asociadas a colegio, no poseen valores, esto se da porque las variables COLE 5M, COLE 10M, COLE 15MIN tienen valores 0, mientras que COLE LEJOS tiene siempre un valor de 1, esto se da porque básicamente las 4 columnas al ser creadas utilizando one hot encoding, termina afectando al calculo de la varianza, debido a que tienen los mismos valores, generando el error descrito anteriormente colocando los signos ? en las variables.
+
+Analizando gráficamente nuestra variable objetivo, tenemos que las mismas variables presenciadas gráficamente en el caso pasado, poseen una correlacion directa.
+
+Tambien para tener mejor precisión, lo observamos en la siguiente tabla:
+```{r}
+CorPA <- as.data.frame(CorPA)
+rmarkdown::paged_table(CorPA)
+```
+
+A primera vista tenemos las mismas variables con correlacion directa.
+
+Ahora bien, pasando al plano geoterritorial, podemos notar que el precio de las viviendas está afectado por diversos motivos y por ello, las viviendas pueden presentar características en común, ya sea el alto precio, la cercania con los servicios públicos, por dar un par de factores. Es por esto que vamos a realizar un analisis de segmentación para cada una de las comunas utilizadas en este estudio.
+
+Es por ello que para aplicar clustering espacial utilizaremos k-means.Pero antes de empezar a ejecutar el algoritmo, es necesario establecer el número óptimo de clusters para cada comuna.
+```{r}
+#Fuente: https://www.youtube.com/watch?v=KmYUE7Of5rU
+#Con esta función podremos determinar el número óptimo de clusters utilizando la regla del codo.
+wssplot <- function(data, nc=15, seed=1234){
+  wss <- (nrow(data)-1)*sum(apply(data,2,var))
+  for (i in 2:nc){
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data, centers=i)$withinss)}
+  plot(1:nc, wss, type="b", xlab="Number of Clusters",
+       ylab="Within groups sum of squares")
+  wss
+}
+
+wssplot(AnalisisLC)
+```
+
+Podemos determinar que el número óptimo de clusters para la comuna de las condes tiene un valor de 4 (aunque es bastante ambiguo, cabe mencionar).
+
+Realizamos el mismo paso para el caso de Puente Alto.
+```{r}
+wssplot(AnalisisPA)
+```
+
+Para el caso de Puente Alto podemos determinar que el número de clusters es de 4
+
+Para empezar a utilizar el algoritmo, es necesario escalar los datos, debido a que las columnas estan en distintas métricas y por ende, su comparación no sea 100 por ciento válida.
+
+```{r}
+EscaladoLC <- scale(AnalisisLC) #Escalado para las variables de Las Condes.
+
+#Para el caso de Puente Alto, hay que eliminarlas columnas asociadas al Colegio, debido a que tendrán desviacion estandar 0 y por ende, al realizar el escalado tendran valores NaN, influyendo en nuestro analisis.
+EscaladoPA <-  dplyr::select(AnalisisPA,-COLE_5MIN,-COLE_10MIN,-COLE_15MIN,-COLE_LEJOS)
+PuenteAltoColegio <-  dplyr::select(CasasPuenteAlto,-COLE_5MIN,-COLE_10MIN,-COLE_15MIN,-COLE_LEJOS)
+EscaladoPA <- scale(EscaladoPA)
+
+```
+Luego de escalar las variables en cuestión, empezamos a utilizar el algoritmo de segmentacion  k means.
+
+```{r}
+SegEscaladoLC <- kmeans(EscaladoLC,4)
+CasasLasCondes$cluster_kmeans <- SegEscaladoLC$cluster #asignamos a una nueva columna los clusters generado
+SegEscaladoPA <- kmeans(EscaladoPA,4)
+PuenteAltoColegio$cluster_kmeans <- SegEscaladoPA$cluster
+```
+
+Ahora nos ponemos a analizar los centros de los clusters, para analizar en las caracteristicas en común que tienen nuestras variables con las viviendas.
+
+Para el caso de Las Condes, tenemos lo siguiente:
+```{r}
+SegEscaladoLC$centers
+```
+
+Vemos diferencias significativas entre cada uno de los clusters, que tienen, podemos ver que el cluster 2, corresponden a casas con una alta superficie del terreno, como también las que mayor aportan en contribuciones, y por ende, las que tienen mayor avaluo. Entraremos más en detalle más adelante acerca de los demás clusters.
+
+De manera gráfica podemos ver lo siguiente:
+
+### Cluster espacial de las viviendas de Las Condes.
+```{r}
+mapview::mapview(CasasLasCondes, zcol='cluster_kmeans') 
+```
+
+
+Realizamos el mismo procedimiento para la comuna de Puente Alto.
+
+```{r}
+SegEscaladoPA$centers
+```
+
+En el caso de la comuna de Puente Alto, tenemos una primera impresión que los valores no son tan altos como la comuna anterior, además que todas los cluster tienen una caracteristica en común, que tienen un colegio a más de 15 minutos. Ahora bien, tenemos que nuestro segundo cluster es el que tiene un mayor valor en la propiedad, además de tener el valor más alto dentro de los 4 en el ámbito de la superficie del terreno como la superficie de construcción. El resto del analisis lo detallaremos en el apartado de análisis de resultados.
+
+
+Lo dicho anteriormente se puede visualizar de la siguiente manera:
+```{r}
+mapview::mapview(PuenteAltoColegio, zcol='cluster_kmeans')
+```
+
+
+Ahora bien, para empezar a trabajar con nuestra hipotesis vamos a realizar una regresión que nos permita la relacion entre nuestra variable objetivo que es UF_TRANS, con las multiples variables que permitan saber como afecta el precio de la vivienda.
+
+Es por ello que realizamos una breve limpieza y copia de variables para empezar la regresión
+```{r}
+CasasLasCondes$cluster_kmeans <- NULL
+
+RegresionCondes <- CasasLasCondes
+RegresionPuenteAlto <-CasasPuenteAlto
+
+RegresionCondes$geometry <- NULL
+RegresionPuenteAlto$geometry <- NULL
+RegresionCondes$cluster_kmeans <- NULL
+```
+
+Empezamos con la regresión para el caso de la comuna Las Condes, donde observaremos si las variables de SUP_TERR y SUP_CONSTR permiten explicar el valor de una vivienda.
+```{r}
+ModeloLC1 <-  lm(RegresionCondes$UF_TRANS ~ RegresionCondes$SUP_TERR + RegresionCondes$SUP_CONSTR)
+summary(ModeloLC1)
+```
+
+Viendo el resumen de nuestra regresión, podemos notar que el R^2 ajustado explica muy levemente la variabilidad del precio de la vivienda, esto implica que ambas variables pueden explicar el comportamiento del valor de las propiedades, tambien podemos notar que nuestro p-value es menor a 0.05 por lo que nuestra hipotesis nula es falsa. 
+
+Ahora bien, esto no da a entender que el valor de la propiedad en la comuna de Las Condes esta influenciada por más variables, es por ello que vamos a probar una regresión con todas las variables seleccionadas para saber si podemos aumentar nuestro R^2 ajustado
+
+```{r}
+ModeloLC2 <- lm(RegresionCondes$UF_TRANS ~ ., data = RegresionCondes)
+
+summary(ModeloLC2)
+```
+
+Analizando los resultados de la regresión, podemos darnos cuenta, que nuestra variabilidad de la variable dependiente aumento, no obstante, este aumento no estan significativo.
+
+
+Pasando a la otra comuna a comparar, tenemos lo siguiente:
+```{r}
+ModeloPA1 <- lm(RegresionPuenteAlto$UF_TRANS ~ RegresionPuenteAlto$SUP_TERR + RegresionPuenteAlto$SUP_CONSTR)
+summary(ModeloPA1)
+```
+
+En este caso, podemos notar que nuesto R^2 ajustado es muchisimo mayor que el de la comuna de Las Condes, aunque aun no tenemos una gran explicación acerca de la variabilidad del precio de las viviendas. Es por esto que realizaremos el mismo paso que con la comuna anterior, agregarle más variables para poder entender este problema.
+
+```{r}
+ModeloPA2 <- lm(RegresionPuenteAlto$UF_TRANS ~ ., data = RegresionPuenteAlto)
+summary(ModeloPA2)
+```
+
+En este caso podemos notar un gran incremento con el caso pasado, además podemos analizar que muchas variables permiten analizar la variabilidad del precio de la vivienda.
+
+Si bien estos analisis nos permiten comprender la dependencia entre variables, en el ámbito de las ciencias espaciales no necesariamente se da de esta forma, debido a que hay factores sociales, culturales como políticos que, estan relacionados entre sí, es por esto que es necesario realizar otro tipo de modelamientos, de carácter espacial.
+
+Ahora bien, lamentablemente dada la naturaleza de los datos entregados (problemas con el calculo de la vecindad y matriz de peso, dado que la variable geometry no son poligonos, sino más bien puntos) esto nos ha impedido realizar el análisis espacial de manera correcta. 
+
+## Análisis de resultados
+
+Luego de haber obtenido los promedios de los 4 clústeres, debemos realizar el análisis de estos, e intentaremos entender en que se baso este algoritmo para la división de estos 4 clústeres. Primero realizaremos un análisis solo sobre los promedios de los clústeres de cada variable, para esto, los ordenamos en posiciones según el valor que tengas, mientras mejor sea la característica, toma el primer lugar y mientras peor, tendrá una posición más baja. Luego se realizará el análisis sobre la relación de estos en el espacio.
+
+Como ya mencionamos anteriormente, enfocaremos todo en relación con la variable UF_TRANS que nos indica el valor de la vivienda en UF, de esta manera, el orden de estos clústeres  para la comuna de Las Condes según esta variable es clústeres 2-3-1-4. Ahora, en las primeras 5 variables, Avaluo, Contribuci, Sup_terr, Año_contr, Sup_contr, tienen una relación directa con el segundo clúster, ya que todas estas variables son las que tienen un mayor valor. Pero no tienen relación directa con los demás clústeres, algo importante a resaltar en estas, es que el clúster 3 y 4 con los valores casi iguales.
+
+Respecto a las variables de cercanía a algún subcentro en transporte privado, resaltan los Clústeres 3 y luego el 4, al igual que lo hacen con las variables de cercanía a metros.  También es importante tener en cuentas las áreas verdes, donde a 15 minutos todas tienen un mismo valor de promedio de clúster a excepción del clúster 2 y luego aun las áreas verdes frente a las viviendas, el con valor mas alto es el 1 y menor el 2. Finalmente las ultimas variables que son importantes a resaltar son, la cercanía que tienen a comercio, educación, salud y servicios. Donde todas estas tienen el mismo orden, el con mayor cercanía, es el 3 luego 2 y finalmente con valores similares 1 y 4.
+
+En resumen, podemos decir que el clúster 2 básicamente son casas mas grandes, con mayor superficie de terreno y construcción. Luego el clúster 3 y 4 son muy similares, estos tienen la mayor cercanía a diferentes lugares, como metros, subcentros, donde el 3 parece tener una leve mejor ubicación. Y finalmente el Clúster 1, no tenía ninguna característica representativa, sino que las variaba su posición en casi todas las variables, excepto en el tamaño de las casas, que era el clúster que le seguía al 2º, de esta manera podríamos decir que es el clúster que intermedio, no tiene ni la mejor ubicación ni son las mas grandes.
+
+Ahora bien, luego del análisis de los valores, veremos como se comportan los clústeres en el espacio. Se puede notar que el clúster 2 está ubicado más cerca del cerro que del centro de Santiago, y es el clúster con menor cantidad de viviendas. Luego el 1 que hay una sección donde se ve que están mezclados o bastante cerca, lo cual tendría sentido con lo anterior debido a que estos son los clústeres con mayor superficie de terreno y construcción. Y Luego vemos que los clústeres 3 y 4 están bastante mesclados y como mencionamos estos tenían características muy similares como para poder hacer una diferenciación visual.
+
+Ahora, también realizaremos el análisis de clúster de la comuna de puente alto. De esta comuna nuestra variable principal UF_TRANS vemos que el mas alto es el 2, luego clúster 4 - clúster 2 – clúster 3. Donde lo primero que llama la atención es que en 2 clúster no existe coherencia entre la variable anterior y las de avalúo y contribuciones, ya que la mayor es el clúster 4 y no el 2. 
+Lamentablemente, solo viendo el promedio de las variables de los clústeres, no parece haber ningún patrón, lo que si se puede resaltar es que el clúster 1 y 2 parecen ser los mejores, ya que el 2 se caracteriza por tener mejores valores en el tamaño de la vivienda, mientras que el 1 en el posicionamiento de esta.
+
+Ahora analizando este clúster en el espacio, podemos ver que lo anterior es correcto, debido a que el clúster 1 está más centralizado y más lejos de los cerros, lo cual aumenta la probabilidad de que tenga los distintos lugares evaluados cerca de ésta. Mientras que el clúster 2 está más en las afueras del mapa, por lo que podemos pensar que las construcciones si serán más grandes. Finalmente vemos que el clúster 4 parecen ser outliers, debido a la poca cantidad que se ven el mapa, y además están distribuidos de una manera que pareciera aleatoria, no siguen ningún patrón a simple vista. 
+
+Pasando al análisis de las regresiones, tenemos que en ambos casos las variables utilizadas no representan de mejor manera la variabilidad del precio de la vivienda, también hay que mencionar que existen otros factores a considerar para determinar el precio de la vivienda de mejor manera.
+
+## Conclusiones
+
+De lo anterior, podemos concluir que el valor de la vivienda se da por diferentes factores, donde no siempre el tamaño de esta es el factor mas importante, esto se ve claramente, en ambas comunas, dado que ninguna tiene una correlación directa entre la superficie del terreno y precio de la vivienda en UF. Es importar notar que en ambas comunas, que la diferencia entre el valor promedio de la superficie de terreno no era muy alto, a excepción del clúster 2 que si tenía una diferencia significativa, Siendo así el clúster con mayor superficie de terreno y teniendo el precio más alto de los clústeres por lo tanto, podemos decir que cuando existe mucha diferencia entre terreno, este si puede llegar ser un factor determinante en el precio, pero cuando no lo es, como ocurrió con todos los demás clústeres, entren en juego otros factores, donde vimos que la cercanía metros, comercio, salud, es importante, mas que la distancia a subcentros en transporte privado, ya que con este ultimo grupo de variables, no vimos una relación muy notaria con el precio.
+
+Además, hay que mencionar que no pudimos realizar un modelamiento espacial de manera correcta, debido a que las variables de ubicación  (geometry) en la data eran puntos spatial points y no polígonos, por lo cual, no pudimos realizar cálculos de vecindad, como de matriz de peso, que nos permitian obtener medir la correlación espacial de mejor manera.
+
+Finalizando este proyecto, podemos dar cuenta que nuestra hipotesis “El valor de una casa está basado únicamente en la cantidad de metros cuadrados tanto del terreno, como de la construcción”, si bien es parcialmente correcta, dado que  el valor de la propiedad posee una correlación con las variables de superficie del terreno como de la construcción, exactamente la hipotesis no se cumple de esa manera. Existen multiples factores tanto sociales como físicos que influyen en el valor de una propiedad (véase la distancia a los establecimientos de eduación básica), además de la cercanía a las ubicaciones laborales, como por ejemplo el centro de Santiago, todo esos factores inciden en el precio de una vivienda, hubieramos tenido una mejor exactitud y modelamiento espacial sino fuera por la problematica presentada anteriormente.
+
