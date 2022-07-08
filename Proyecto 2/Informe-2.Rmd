@@ -1,0 +1,409 @@
+---
+title: "Proyecto 2"
+author: "Benjamin Parraguez"
+date: "Fecha de entrega: 5-06-2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Definición de área de estudio, ecosistema y accesibilidad.
+
+Hoy en día en el mundo, cada día que pasa, los recursos naturales cada vez se hacen más escasos y por ende, su accesibilidad cada vez se hace más compleja, es por esto que en Chile, en este último tiempo, se impulsó y se decretó una nueva ley con que respecta el libre acceso a playas, mares y lagos, no obstante, al día de hoy, siguen habiendo casos donde no se respeta aquella norma, donde un caso en el cual vamos a trabajar mediante el uso de las ciencias espaciales, es la problemática de los vecinos de la comuna de Cunco.
+
+Cunco es una comuna ubicada en la provincia de Cautín, específicamente en la región de la Araucanía, cuenta con un poco más de 17.526 habitantes y se destaca principalmente en el área turística, principalmente en el perfil del ecoturista, donde la gran cantidad de forestación, como también la presencia de ríos, y sin duda alguna, los lagos Caburgua y Collico, han permitido el desarrollo económico  de la zona, no obstante, este último ha dado de qué hablar.
+
+Una noticia publicada a inicios del 2021 por La Tercera, ha dado a conocer una problemática de accesibilidad causada por un propietario que niega ceder parte de su terreno para poder acceder a la playa Rincón de Las Hadas, en el lago Collico, si bien el problema se radica desde el 2014, el conflicto ha empezado a escalar, sobretodo con la presencia de la nueva ley de libre acceso. (Fuente: https://www.latercera.com/nacional/noticia/acceso-al-lago-colico-la-disputa-que-tensiona-a-vecinos-y-autoridades/IA44J4SU7VBTZMCN7IAUN3QRKU/)
+
+Es por esto, que como grupo hemos decidido abordar aquella problemática mediante el uso de las ciencias espaciales, trabajando como ecosistema principal el lago Collico, donde la accesibilidad estará dada por el acceso a la playa Rincón de Las Hadas. Aunque es necesario dejar en claro un par de supuestos.
+
+El primero de ellos y que es necesario definir, es el acceso al ecosistema, como grupo hemos definido que para acceder a la playa Rincón Las Hadas, se puede realizar de dos formas, una de ellas es a través de un auto de uso habitual en las calles, y la otra forma de acceder es caminando al lugar.
+
+El segundo supuesto que está vinculado con el primero, es que para poder llegar al lugar, se deben utilizar las calles y/o caminos oficiales, es decir, no se pueden tomar rutas improvisadas ni mucho menos cruzar por zonas donde no se  hayan establecidos caminos. Esto con el fin de realizar el mejor cálculo posible en la accesibilidad.
+
+El tercer supuesto, es que la ciudadanía para poder acceder al lago, tendrá como punto de partida la municipalidad de Cunco y como punto final el término del camino de acceso a la playa. Esto nos permite establecer márgenes para el cálculo. Agregando a este supuesto, consideraremos solo la zona urbana de Cunco (esto va por una tema de representatividad en los mapas creados).
+
+Y por último pero no menor, para acceder desde la municipalidad a la playa, utilizaremos la ruta más corta dentro de los supuestos establecidos.
+
+Una vez definido los supuestos y la problematica, nos ponemos a trabajar.
+
+
+## Procesamiento y limpieza de datos
+
+Antes de comenzar con el procesamiento y la limpieza de los datos, es necesario descargar los archivos con la información de los poligonos de la comuna de Cunco como tambien el lago Collico, estos archivos estan subidos al github del grupo, además que los archivos tambien se pueden encontrar de forma publica en https://www.ide.cl y en https://ide.mma.gob.cl respectivamente.
+
+Cabe mencionar que la forma que estamos utilizando para descargar y posteriormente extraer la información, es la forma más "amigable" de poder extraer los archivos distintos a un csv  en github.
+
+Procedemos a descargar los archivos y extraer los archivos del zip.
+```{r}
+download.file(url = "https://github.com/BenjaParraguezC/DataCienciaEspacialP2/archive/master.zip", destfile = "DataCienciaEspacialP2-master.zip")
+
+unzip(zipfile = "DataCienciaEspacialP2-master.zip")
+
+```
+
+Al tener una carpeta creada por el unzip, creamos una variable con la ruta hacia esta, para poder trabajar en el mismo directorio con los archivos. Tambien creamos una variable con la ruta actual, para que posteriormente concadenar ambas variables y posteriormente asignar al nuevo directorio de trabajo. Por temas prácticos no podremos ejecutar lo siguiente, no obstante, lo dejamos como solución al problema de descargar archivos diferentes a un .csv en github.
+
+```{r}
+#RutaArchivos <- "/DataCienciaEspacialP2-main"
+
+#Ruta <- getwd()
+
+#RutaNueva <- paste(RutaArchivos,Ruta,sep="")
+
+#setwd(RutaNueva)
+
+```
+
+Ahora que estamos en la misma carpeta con nuestros archivos shapefiles, seguimos con la manipulacion y limpieza de los datos.
+
+Para cargar nuestro archivo shapefile, es necesario tener la libreria sf
+```{r}
+#install.packages('sf')
+```
+
+Cargamos la data 
+```{r}
+ZonaUrbana <- sf::st_read("Zonas_urbanas_2017_Chile.shp")
+```
+
+```{r, layout="l-body-outset"}
+rmarkdown::paged_table(ZonaUrbana)
+```
+Podemos notar la presencia de varias columnas que no aportan, es por ello que empezamos a filtrar utilizando la libreria dplyr
+```{r}
+#install.packages("dplyr")
+ZonaUrbanaFiltrada<- dplyr::select(ZonaUrbana,-COMUNA,-Shape_Leng,-Shape_Area,-GEOCODIGO,-PROVINCIA) 
+```
+Luego de eliminar las columnas que no nos sirven para nuestro estudio, procedemos a filtrar por la comuna de Cunco
+```{r}
+Cunco <- ZonaUrbanaFiltrada[ZonaUrbanaFiltrada$URBANO =="CUNCO",]
+Cunco <-  na.omit(Cunco)
+```
+
+Graficamos para ver el poligono de la zona urbana de Cunco
+```{r}
+plot(Cunco$geometry)
+```
+
+Luego de procesar la información de la zona urbana de Cunco, seguimos con esta vez con el lago Collico
+
+Cargamos los datos
+```{r}
+LagosChile <- sf::st_read("Inventario_Lagos.shp") 
+```
+Desplegamos la información
+```{r, layout="l-body-outset"}
+rmarkdown::paged_table(LagosChile)
+```
+
+Filtramos por las columnas que nos interesan
+```{r}
+LagosChileFiltrado<- dplyr::select(LagosChile,NOMBRE,TIPO,REGION,PROVINCIA,COMUNA,geometry) 
+```
+
+
+Filtramos por la comuna de Cunco, para que nos salga el lago Collico
+```{r}
+LagoCollico <-  LagosChileFiltrado[LagosChileFiltrado$COMUNA =="CUNCO",]
+
+```
+
+Graficamos la solucion encontrada
+```{r}
+plot(LagoCollico$geometry)
+```
+
+Una vez ya obtenida y limpiada la data relacionada a nuestra problemática, empezamos a trabajar en nuestro análisis.
+
+## Detección de ecosistemas utilizando GEE
+
+Para poder empezar a abordar el problema, es necesario identificar dónde está el lago Collico y específicamente, la playa Rincón Las Hadas, esto lo haremos utilizando imágenes satelitales brindadas por el satélite Landsat, gracias a la libreria rgee de Google.
+
+Es por ello que es necesario descargar y/o cargar la libreria, en este caso, se requiere de hacer un par de pasos adicionales para poder instalar de manera correcta RGEE, es por esto que dejamos la documentación oficial para su correcta instalación.
+
+```{r}
+#install.packages('rgee')
+#https://cran.r-project.org/web/packages/rgee/vignettes/rgee01.html
+```
+
+Procedemos a cargar la libreria e inicializarla
+```{r}
+library(rgee)
+
+ee_Initialize()
+```
+Seleccionamos la coordenada de interés, que en nuestro caso seria la playa Rincón de las Hadas
+```{r}
+roi <- 
+  c(-72.072119, -39.070586) %>%  # Coordenadas del acceso playa rincon las hadas.
+  sf::st_point(dim = "XYZ") %>% 
+  sf::st_buffer(dist = 0.2) %>% 
+  sf_as_ee()
+```
+Verificamos que la región de coordenadas este precisamente en el lago Collico.
+```{r}
+Map$centerObject(roi)
+Map$addLayer(roi)
+```
+Ajustamos parametros para disponer imagenes dentro del mes de enero del 2021, que son las fechas que nos interesan, además de seleccionar el satelite LANDSAT 8.
+```{r}
+Landsat <- ee$ImageCollection("LANDSAT/LC08/C01/T1_TOA")$
+  filterDate('2021-01-07','2021-01-31')$
+  filterBounds(roi)$
+  filterMetadata('CLOUD_COVER','less_than', 2)
+```
+
+Identificamos si existen imagenes satelites en la fecha establecida, con su respectiva área de interes.
+```{r}
+ee_get_date_ic(Landsat)
+```
+Utilizaremos la segunda imagen satelital brindada el 12 de Enero del 2021, debido a que tiene una mejor proyeccion para nuestra área de estudio.
+
+Es por ello que copiamos su Id y seleccionamos la segunda imagen debido a que es la que nos permite observar de manera completa el Lago Collico, además ocupamos las respectivas bandas para poder identificar el lago con su respectivo indice espectral hidrologico (NDWI)
+```{r}
+SateliteCollico<- 'LANDSAT/LC08/C01/T1_TOA/LC08_233087_20210112' %>%
+  ee$Image() %>% 
+  ee$Image$select(c("B3","B4", 
+                    "B5", "B6"))
+```
+
+Procedemos a observar la imagen
+```{r}
+Map$centerObject(roi)
+Map$addLayer(SateliteCollico)
+```
+
+Podemos notar la presencia de los lagos presentes en la región, no obstante aun no se identifica claramente el lago collico, como tambien el analisis de ndwi para masas de agua.
+
+
+Otra imagen satelital para observar:
+```{r}
+ImagenSateliteCollico2 <- ee_as_raster(
+  image = ee$Image('LANDSAT/LC08/C01/T1_TOA/LC08_233087_20210112')$select(c("B3","B4", 
+                            "B5", "B6")),
+  region = roi$bounds(),
+  scale = 30,
+  add_metadata = FALSE)
+```
+
+Se requiere la libreria raster para poder observar la otra imagen satelital.
+```{r}
+#install.packages('raster')
+
+raster::plotRGB(ImagenSateliteCollico2, r=3, g=4, b=1, stretch = "lin")
+```
+
+Esta imagen podemos diferenciar los cerros de la zona urbana, ademas de la presencia de los lagos y del rio Allipen
+
+Ahora seguimos con el calculo del indice espectral para masas de agua. Es por ello que definimos la función y posteriormente, su utilizacion. (Cabe aclarar que para obtener el NDWI, es necesario ocupar las bandas B3, correspondiente al color verde y la banda B5, que corresponde al NIR o Espectroscopía de infrarrojo cercano)
+
+```{r}
+getNDWI <- function(image) {
+  image$normalizedDifference(c("B3", "B5"))
+}
+
+# Compute NDWI from the scene.
+ndwi <- getNDWI(SateliteCollico)
+
+```
+
+Creamos los parametros para cambiar la paleta de colores.
+```{r}
+ndwiParams <- list(
+  palette = c(
+    "#ece7f2", "#d0d1e6",
+    "#a6bddb", "#74a9cf",
+    "#3690c0", "#0570b0",
+    "#045a8d", "#023858"
+  )
+)
+```
+
+Transformamos las clases de Cunco y LagoCollico al formato de google earth engine, para poder incluirlos en la detección del ecosistema
+
+```{r}
+CuncoGEE <-  Cunco %>% sf_as_ee()
+
+LagoCollicoGEE <- LagoCollico %>%  sf_as_ee()
+```
+
+Procedemos a realizar el mapa utilizando el indice espectral NDWI, junto con las capas de la zona Urbana de Cunco como la identificación del lago Collico
+```{r}
+Map$centerObject(roi, zoom = 10)
+Map$addLayer(ndwi, ndwiParams, "NDWI") + Map$addLayer(CuncoGEE) + Map$addLayer(LagoCollicoGEE)
+
+MapaCompleto <- Map$addLayer(ndwi, ndwiParams, "NDWI") + Map$addLayer(LagoCollicoGEE) + Map$addLayer(CuncoGEE)# Esto lo utilizaremos más adelante
+```
+
+Como podemos apreciar, tenemos el poligono la zona urbana de la comuna de Cunco como tambien el lago Collico en la imagen espacial del Landsat 8, notamos tambien la identificacion de los cuerpos de agua presente en la región, como lo son el lago Villarrica o el lago Caburga.
+
+Finalmente, podemos analizar visualmente, la presencia del lago Collico y su distancia frente a los habitantes de la zona urbana de Cunco.
+
+## Cálculo de accesibilidad 
+
+Ahora bien, pasando el cálculo de accesibilidad, es necesario recordar que estamos bajo cuatro supuestos para realizar el cálculo de accesibilidad, donde en resumidas cuentas, tenemos que:
+
+1) Para acceder a la playa, solo se puede a través de un auto de uso habitual en las calles o bien caminando al lugar.
+
+2) Para poder llegar al lugar, solo se pueden utilizar las calles y/o caminos establecidos, en otras palabras, no se pueden improvisar caminos ni mucho menos cruzar por zonas no habilitadas.
+
+3) A modo didáctico, hemos establecido el punto de partida en la municipalidad de Cunco y como punto final el término del camino al acceso a la playa.
+
+4) El trayecto debe ser el más corto posible.
+
+Es importante definir estos puntos, debido a que pueden caer en dobles interpretaciones, además de establecer márgenes a la hora de realizar los cálculos. En suma, utilizaremos los mapas brindados por OpenStreetMap para realizar los calculos de distancia (Debido a que los mapas dadoss por Google, es necesario tener un método de pago válido, además de que no cuentan con todos los caminos en ciertos lugares, donde en nuestro caso, si nos afecta).
+
+Para empezar la medición, utilizaremos la libreria OSRM, que nos permitirá medir los enrutamientos utilizando distintos perfiles de usuario, además de siempre buscar la ruta más corta, además de la libreria mapview que nos permitirá visualizar nuestros resultados.
+
+Es por ello que descargamos/instalamos la libreria, además de mapview.
+
+```{r}
+#install.packages('osrm')
+#install.packages('mapview')
+```
+
+Es necesario realizar un par de ajustes en el servidor predeterminado otorgado por la libreria. También es necesario definir los puntos de partida y de llegada, como también transformar los datos en un sf (Simple Features), para poder trabajar de manera correcta con la visualización espacial. Posteriormente, creamos los perfiles que vamos a utilizar.
+```{r}
+options(osrm.server = 'https://routing.openstreetmap.de/')
+coord <- data.frame(lugar = c('Mun. Cunco', 'playa Rincon Las Hadas'), lon = c(-72.032901, -72.07149), lat = c(-38.933052, -39.07270))
+coord <- sf::st_as_sf(x = coord, coords = c('lon', 'lat'), crs = sf::st_crs(4326))
+routeCar <- osrm::osrmRoute(src = coord[1,], dst = coord[2,], returnclass = 'sf', osrm.profile = "car")
+routeFoot <- osrm::osrmRoute(src = coord[1,], dst = coord[2,], returnclass = 'sf', osrm.profile = "foot")
+```
+
+Mostramos el resultado obtenido en el enrutamiento en el caso del perfil de un usuario en auto.
+```{r}
+routeCar
+
+```
+Donde la variable duration, implica el tiempo empleado, medido en minutos, y la variable distance mide la distancia entre los puntos establecidos en kilometros.
+
+Mismo caso pero para el peatón.
+```{r}
+routeFoot
+```
+
+Ahora nos ponemos a gráficar la solución obtenida
+
+### Rutas más cortas entre la municipalidad de cunco y la playa rincon Las Hadas.
+```{r}
+mapview::mapview(routeFoot) + mapview::mapview(routeCar, color = 'red')
+```
+
+Podemos ver un comportamiento atípico del resultado (teniendo el mismo destino y optando a la ruta más corta, tengan trayectos distintos, es por ello que es necesario realizar un ajuste, establenciendo un punto medio, forzando al trayecto en auto tomar el mismo camino que realizarlo a pie.
+
+Realizamos las mismas configuraciones, pero esta vez colocando un punto intermedio entre la municipalidad y la playa.
+```{r}
+coord1 <- data.frame(lugar = c('Mun. Cunco', 'Punto Medio','playa Rincon Las Hadas'), lon = c(-72.032901, -72.02560,-72.07149), lat = c(-38.933052, -38.93573,-39.07270))
+coord1 <- sf::st_as_sf(x = coord1, coords = c('lon', 'lat'), crs = sf::st_crs(4326))
+routeCarFixed <- osrm::osrmRoute(loc = coord1[1:3,], returnclass = 'sf',osrm.profile = "car")
+routeFootFixed <- osrm::osrmRoute(loc = coord1[1:3,], returnclass = 'sf',osrm.profile = "foot")
+```
+
+Observamos el resultado para el perfil del conductor.
+```{r}
+routeCarFixed
+```
+
+Mismo caso para el peatón.
+```{r}
+routeFootFixed
+```
+
+Observando el resultado en el siguiente mapa
+
+### Rutas más cortas entre la municipalidad de cunco y la playa rincon Las Hadas, utilizando un punto intermedio.
+```{r}
+mapview::mapview(routeFootFixed) + mapview::mapview(routeCarFixed, color = 'red')
+```
+
+Podemos notar que ahora tenemos la ruta más corta para los perfiles descritos en un principio de manera gráfica. En cuanto a los resultados de estos, entraremos en detalle en la siguiente sección.
+
+Otra forma de visualización utilizando los poligonos de la comuna y el lago:
+```{r}
+mapview::mapview(Cunco$geometry, col.regions = 'green') + mapview::mapview(LagoCollico$geometry) + mapview::mapview(routeCarFixed, color ='red')
+```
+
+Y utilizando GEE, tambien podemos ver la ruta.
+```{r}
+AutoGEE <- routeCarFixed  %>% sf_as_ee()
+MapaCompleto + Map$addLayer(AutoGEE)
+```
+
+
+## Análisis de resultados 
+
+Sobre el análisis de accesibilidad, vemos que en el primer caso nos da una ruta en vehículo diferente a la ruta a pie, y se menciono como un caso atípico, pero si analizamos bien la ruta, podemos notar que parece ser una ruta muchos mas fluida, debido a la baja cantidad de curvas pronunciadas, a diferencia de la ruta a pie, donde se puede ver que será un camino donde en vehículo no se podrán alcanzar grandes velocidades. Ahora para confirmar esto podemos ver el nombre de la ruta en vehículo, el cual es ruta s -61, y podemos confirmar que si será una ruta donde se pueden alcanzar mayores velocidades. Ahora a pesar de que nosotros tomamos Cunco como nuestro pueblo para hacer el análisis, es importarte notar que esta es la ruta por donde accederían, las personas de otras ciudades más lejanas, como lo seria Temuco, por lo tanto, es una ruta que hay que tener en cuenta. 
+
+También podemos ver que existe la ruta para llegar a pie, de esa ruta podemos que ver que es una ruta mas interna que la otra opción, debido a que se puede notar que no es una vía por donde un vehículo pueda alcanzar grandes velocidades por su gran cantidad de curvas cerradas que se pueden apreciar en el gráfico. Igualmente, a pesar de quizás no se tan rápida, se puede notar que la distancia es mucho menor a la otra ruta, por lo tanto, nos interesa saber si es que esta ruta puede ser realizada en vehículo.
+
+
+Comparando ambas rutas tenemos que:
+
+### Comparación entre rutas utilizando un perfil de conductor.
+```{r}
+#install.packages("leaflet.extras")
+library(leaflet.extras)
+MapaMejoradoAuto <- mapview::mapview(routeCarFixed, color = 'green')
+MapaAuto <- mapview::mapview(routeCar, color = 'red')
+MapaAuto | MapaMejoradoAuto
+```
+El resultado que obtuvimos fue positivo, realizando un par de modificaciones, se muestra que es posible realizar aquella en vehículo, tomando así una ruta de menor distancia que la anterior. De esta manera podemos ver que existen varias rutas para llegar la playa deseada, pero el acceso a esta es siempre el mismo. 
+
+Ahora podemos analizar la velocidad a la cual se puede viajar por esta ruta, ya sea a pie o en vehículo. Para esto utilizaremos las variables de distancia y duración, las cuales están incluidas en la ruta “routeCarFixed” y "routeFootFixed" obtenida gracias a osmr.
+
+Dividimos la distancia en la duración partida en 60, para obtener como resultado la velocidad en [km*H].
+
+```{r}
+VelocidadAutoFixed <- routeCarFixed$distance / (routeCarFixed$duration/60)
+VelocidadAutoFixed
+```
+
+El resultado de lo anterior es de 41,331[km/h], no obstante es necesario mencionar que esta velocidad es constante durante todo el trayecto.
+
+Ahora también podemos analizar la velocidad a la que se calcula la ruta a pie, realizando los mismos cálculos.
+
+```{r}
+VelocidadFootFixed <- routeFootFixed$distance / (routeFootFixed$duration/60)
+VelocidadFootFixed
+```
+
+El resultado es de 4.42 [km/h]. Por lo que podemos decir que utilizando esta ruta yendo a pie, donde la velocidad promedio según diversas fuentes de internet es de 5 [km/h], es de casi 6 horas para poder llegar a acceder al lago.
+
+Ahora bien, para poder determinar si nuestros calculos acerca de la accesibilidad desde la municipalidad y la playa son correctos, vamos a calcular el porcentaje de error, es por esto, que nos basaremos en las distancias calculadas por google maps. **IMPORTANTE** Es necesario aclarar que tanto OpenStreetMap y GoogleMaps, pueden llegar a tener diferencias en la creación de las calles para sus mapas cartográficos (Como en este caso para el trayecto final hacia la playa), por lo que tomaremos como valor teórico y a modo didáctico, los valores de Google, aunque esto no quiera decir que sean los valores teóricos definitivos.
+
+```{r}
+#Valores sacados utilizando google maps, colocando como punto inicial la municipalidad y como término la playa rincon de las hadas
+DistanciaTeoricaGoogleAuto <- 25.7 #Km
+DistanciaTeoricaGooglePie <- 25.5 #Km
+```
+
+Procedemos a calcular el porcentaje de error
+
+```{r}
+ErrorAuto <- (abs(DistanciaTeoricaGoogleAuto-routeCarFixed$distance)/DistanciaTeoricaGoogleAuto) * 100
+ErrorAuto
+```
+Notamos que tenemos un porcentaje de error de un 3,45. Que es bastante bajo para nuestro análisis, cabe aclarar que este error también esta ligado a nuestros supuestos mencionados al principio del proyecto.
+
+Realizamos el mismo procedimiento para la ruta a pie.
+```{r}
+ErrorPie <- (abs(DistanciaTeoricaGooglePie-routeFootFixed$distance)/DistanciaTeoricaGooglePie) * 100
+ErrorPie
+```
+
+También logramos tener un porcentaje de error bastante bajo, 3,66. Indicando que nuestro análisis es bastante eficaz para medir la accesibilidad que tienen los habitantes de la zona urbana de Cunco para poder acceder a la playa en cuestión.
+
+## Conclusiones
+
+Para finalizar, como mencionamos anteriormente, ambas rutas llegaban al mismo acceso, de esta manera, podemos ver la poca cantidad accesos que tiene esta playa ubicada en el lago Collico, por lo tanto, no puede ser posible que personas estén limitando el acceso a estos ecosistemas.
+
+De esta manera es importante tener reguladas las propiedades que pueden llegar a limitar el acceso a ecosistemas, ya que uno puede pensar que la ventaja de que este mas urbanizado el sector, permitirá que mas personas puedan entrar y encontrar estos ecosistemas. Por el contrario, si es que no estuviera urbanizado, sería muy difícil para las personas encontrarlos o acceder a ellos, ya sea por los caminos, o cualquier otra razón. En conclusión, es importante mantener un equilibro entre lo urbano y lo rural, o natural. Ya que también una excesiva urbanización y demasiado turismo les hacen perder la magia a estos lugares.
+
+Tambien podemos notar que nuestros calculos tienen un bajo porcentaje de error, esto nos ha indicado que nuestro análisis ha sido realizado de la manera correcta, en suma, podemos notar que la poblacion de la zona urbana de cunco posee una accesibilidad a grandes rasgos a la playa rincon de las hadas ya sea yendo a pie o como también en auto.
+
+Ahora bien, dando cierre a este estudio, tenemos que la accesibilidad al lago collico mediante la playa tiene un giro en la trama, es decir, el acceso reclamado a inicios del 2021, no es un camino decretado como público, por lo que la prohibicion al acceso a esta no esta dentro de lo ilegal, segun una noticia el diario Constitucional un año después de la polémica. (fuente: https://www.diarioconstitucional.cl/2022/01/19/acceso-reclamado-al-lago-colico-no-es-un-camino-decretado-como-publico-por-lo-que-su-cierre-no-reviste-ilegalidad-o-arbitrariedad/)
+
